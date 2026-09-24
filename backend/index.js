@@ -670,10 +670,9 @@ app.put('/api/leave-requests/:id', async (req, res) => {
 });
 
 // ==================== SERVER INITIALIZATION ====================
+// ==================== SERVER INITIALIZATION ====================
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`🚀 Bulletproof backend running locally on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Bulletproof backend running live on port ${PORT}`);
 });
-
-module.exports = app;
