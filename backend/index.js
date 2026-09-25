@@ -482,6 +482,118 @@ app.put('/api/sales/:id', async (req, res) => {
   }
 });
 
+// ==================== ATTENDANCE ====================
+// Agents check in once per day; the frontend calls GET to load today's/past
+// logs and POST each time "Check In" is pressed.
+
+// An agent's own attendance logs
+app.get('/api/attendance/agent/:agentId', async (req, res) => {
+  try {
+    const targetAgentId = req.params.agentId;
+    console.log(`📥 Fetching attendance for agent ID: ${targetAgentId}`);
+
+    await connectDB();
+    const db = mongoose.connection.db;
+    if (!db) {
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
+
+    const logs = await db.collection('attendance')
+      .find({ agentId: targetAgentId })
+      .sort({ date: -1 })
+      .toArray();
+
+    return res.json({ success: true, logs });
+  } catch (err) {
+    console.error('Fetch attendance error:', err.message);
+    return res.status(500).json({ error: 'Server error fetching attendance: ' + err.message });
+  }
+});
+
+// All attendance, for the Team Lead / CEO dashboard
+app.get('/api/attendance', async (req, res) => {
+  try {
+    console.log('📥 Fetching all attendance');
+    await connectDB();
+
+    const db = mongoose.connection.db;
+    if (!db) {
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
+
+    const filter = {};
+    if (req.query.date) filter.date = req.query.date;
+
+    const logs = await db.collection('attendance')
+      .find(filter)
+      .sort({ date: -1 })
+      .toArray();
+
+    return res.json({ success: true, logs });
+  } catch (err) {
+    console.error('Fetch all attendance error:', err.message);
+    return res.status(500).json({ error: 'Server error fetching attendance: ' + err.message });
+  }
+});
+
+// Record a check-in (one per agent per day - upsert so re-checking in the
+// same day updates the existing record instead of creating a duplicate)
+app.post('/api/attendance', async (req, res) => {
+  try {
+    console.log('🎯 /api/attendance POST route hit', req.body);
+    await connectDB();
+
+    const db = mongoose.connection.db;
+    if (!db) {
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
+
+    const {
+      agentId,
+      agentName,
+      date,
+      checkInTime,
+      lateArrival,
+      earlyDeparture,
+      breakTime,
+      netPortalTime,
+      status
+    } = req.body;
+
+    if (!agentId || !date) {
+      return res.status(400).json({ error: 'Agent ID and date are required' });
+    }
+
+    const record = {
+      agentId: String(agentId).trim(),
+      agentName: agentName || String(agentId),
+      date,
+      checkInTime: checkInTime || '',
+      lateArrival: lateArrival || '',
+      earlyDeparture: earlyDeparture || '',
+      breakTime: breakTime || '',
+      netPortalTime: netPortalTime || '',
+      status: status || 'Available',
+      updatedAt: new Date()
+    };
+
+    const result = await db.collection('attendance').findOneAndUpdate(
+      { agentId: record.agentId, date: record.date },
+      { $set: record, $setOnInsert: { createdAt: new Date() } },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    // MongoDB driver v5 returns { value: doc }, v6+ returns the doc itself
+    const savedLog = result && result.lastErrorObject !== undefined ? result.value : result;
+
+    console.log(`✅ Attendance recorded for agent: ${record.agentId} on ${record.date}`);
+    return res.status(201).json({ success: true, log: savedLog || record });
+  } catch (err) {
+    console.error('Create attendance error:', err.message);
+    return res.status(500).json({ error: 'Server error recording attendance: ' + err.message });
+  }
+});
+
 // ==================== LEAVE / APPROVAL REQUESTS ====================
 // Employees submit leave requests. Team Lead and CEO accounts review them.
 
